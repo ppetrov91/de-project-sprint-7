@@ -1,3 +1,4 @@
+import pyspark.sql.functions as F
 from datetime import date, timedelta
 
 
@@ -11,5 +12,13 @@ def input_paths(sc, hdfs_url, input_path, dt, depth, event_type=""):
             if fs.exists(sc._jvm.org.apache.hadoop.fs.Path(f"{input_path}/date={dt - timedelta(days=i)}/{event_type_filter}"))
            ]
 
+def get_events(sc, s, hdfs_url, events_src_path, dt, depth, expr_list):
+    events_path_list = input_paths(sc, hdfs_url, events_src_path, dt, depth)
+    base_path = f"{hdfs_url}{events_src_path}"
 
+    if len(events_path_list) == 0:
+        return None
 
+    return s.read.option("basePath", base_path) \
+                 .parquet(*events_path_list).filter((F.col("city") != '-')) \
+                 .selectExpr(*expr_list)

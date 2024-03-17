@@ -4,21 +4,9 @@ import pyspark.sql.functions as F
 
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
-from utils import input_paths
+from utils import input_paths, get_events
 from pyspark.sql.window import Window
 
-
-def get_events(sc, sql, hdfs_url, events_src_path, dt, depth):
-    events_path_list = input_paths(sc, hdfs_url, events_src_path, dt, depth)
-    base_path = f"{hdfs_url}{events_src_path}"
-
-    if len(events_path_list) == 0:
-        return None
-
-    return sql.read.option("basePath", base_path) \
-                   .parquet(*events_path_list).filter((F.col("city") != '-')) \
-                   .selectExpr("user_id", "to_timestamp(datetime, 'y-M-d H:m:s') as datetime",
-                               "event_type", "city", "timezone")
 
 def get_user_city_stats(df):
     bw = Window().partitionBy(["user_id"])
@@ -63,12 +51,14 @@ def main():
     events_src_path = sys.argv[5]
     users_datamart_base_path = sys.argv[6]
     dst_path = f"{hdfs_url}/{users_datamart_base_path}/date={dt}/depth={depth}"
+    expr_list = ["user_id", "to_timestamp(datetime, 'y-M-d H:m:s') as datetime",
+                 "event_type", "city", "timezone"]
 
     conf = SparkConf().setAppName(f"UsersDatamart-{uname}-{dt}-d{depth}")
     sc = SparkContext(conf=conf)
     sql = SQLContext(sc)
 
-    events = get_events(sc, sql, hdfs_url, events_src_path, dt, depth)
+    events = get_events(sc, sql, hdfs_url, events_src_path, dt, depth, expr_list)
 
     if not events:
         return
