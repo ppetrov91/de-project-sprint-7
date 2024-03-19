@@ -14,6 +14,7 @@ from pyspark.sql import SparkSession
 os.environ["HADOOP_CONF_DIR"] = "/etc/hadoop/conf"
 os.environ["YARN_CONF_DIR"] = "/etc/hadoop/conf"
 
+log = logging.getLogger(__name__)
 
 def get_events_stats(e, group_by_list, prefix, return_col_list):
     return e.groupBy(*group_by_list) \
@@ -28,11 +29,11 @@ def get_events_stats(e, group_by_list, prefix, return_col_list):
 def get_zones_datamart(events):
     e = events.withColumn("month", F.date_trunc("month", F.col("datetime"))) \
               .withColumn("week", F.date_trunc("week", F.col("datetime"))) \
-              .withColumn("message", 
+              .withColumn("message",
                           F.when(F.col("event_type") == "message", 1).otherwise(0)) \
-              .withColumn("reaction", 
+              .withColumn("reaction",
                           F.when(F.col("event_type") == "reaction", 1).otherwise(0)) \
-              .withColumn("subscription", 
+              .withColumn("subscription",
                           F.when(F.col("event_type") == "subscription", 1).otherwise(0))
 
     emc = get_events_stats(e, ["month", "city"], "month",
@@ -60,20 +61,24 @@ def main():
     events_src_path = sys.argv[6]
     zones_datamart_base_path = sys.argv[7]
     dst_path = f"{hdfs_url}/{zones_datamart_base_path}/date={dt}/depth={depth}"
-    expr_list = ["user_id", "to_timestamp(datetime, 'y-M-d H:m:s') as datetime",
+    expr_list = ["user_id", "to_timestamp(substring(datetime, 1, 19), 'y-M-d H:m:s') as datetime",
                  "event_type", "city"]
 
 
     with SparkSession.builder.master(master) \
+                             .config("spark.executor.memory", "16g") \
+                             .config("spark.driver.memory", "16g") \
                              .appName(f"ZonesDatamart-{uname}-{dt}-d{depth}") \
                              .getOrCreate() as session:
         context = session.sparkContext
-        events = get_events(context, session, hdfs_url, events_src_path, 
+        events = get_events(context, session, hdfs_url, events_src_path,
                             dt, depth, expr_list)
 
         if not events:
+            log.info("No events were not found")
             return
 
+        events = events.filter((F.col("city") != '-'))
         zones_datamart = get_zones_datamart(events)
         zones_datamart.write.mode("overwrite").parquet(dst_path)
 

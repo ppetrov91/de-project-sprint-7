@@ -1,12 +1,21 @@
-import datetime
+import os
 import sys
+import logging
+import findspark
 import pyspark.sql.functions as F
 
-from pyspark import SparkConf, SparkContext
-from pyspark.sql import SQLContext
 from utils import input_paths, get_events
 from pyspark.sql.window import Window
 
+findspark.init()
+findspark.find()
+
+from pyspark.sql import SparkSession
+
+os.environ["HADOOP_CONF_DIR"] = "/etc/hadoop/conf"
+os.environ["YARN_CONF_DIR"] = "/etc/hadoop/conf"
+
+log = logging.getLogger(__name__)
 
 def get_user_city_stats(df):
     bw = Window().partitionBy(["user_id"])
@@ -47,24 +56,30 @@ def main():
     dt = sys.argv[1]
     depth = int(sys.argv[2])
     hdfs_url = sys.argv[3]
-    uname = sys.argv[4]
-    events_src_path = sys.argv[5]
-    users_datamart_base_path = sys.argv[6]
+    master = sys.argv[4]
+    uname = sys.argv[5]
+    events_src_path = sys.argv[6]
+    users_datamart_base_path = sys.argv[7]
     dst_path = f"{hdfs_url}/{users_datamart_base_path}/date={dt}/depth={depth}"
-    expr_list = ["user_id", "to_timestamp(datetime, 'y-M-d H:m:s') as datetime",
+    expr_list = ["user_id", "to_timestamp(substring(datetime, 1, 19), 'y-M-d H:m:s') as datetime",
                  "event_type", "city", "timezone"]
 
-    conf = SparkConf().setAppName(f"UsersDatamart-{uname}-{dt}-d{depth}")
-    sc = SparkContext(conf=conf)
-    sql = SQLContext(sc)
+    with SparkSession.builder.master(master) \
+                             .config("spark.executor.memory", "16g") \
+                             .config("spark.driver.memory", "16g") \
+                             .appName(f"UsersDatamart-{uname}-{dt}-d{depth}") \
+                             .getOrCreate() as session:
+        context = session.sparkContext
+        events = get_events(context, session, hdfs_url, events_src_path, 
+                            dt, depth, expr_list)
 
-    events = get_events(sc, sql, hdfs_url, events_src_path, dt, depth, expr_list)
+        if not events:
+            log.info("No events were found")
+            return
 
-    if not events:
-        return
-
-    users_datamart = get_user_city_stats(events)
-    users_datamart.write.mode("overwrite").parquet(dst_path)
+        events = events.filter((F.col("city") != '-'))        
+        users_datamart = get_user_city_stats(events)
+        users_datamart.write.mode("overwrite").parquet(dst_path)
 
 if __name__ == "__main__":
     main()
