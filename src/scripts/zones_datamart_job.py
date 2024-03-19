@@ -1,18 +1,11 @@
 import os
 import sys
-import findspark
+import logging
 import pyspark.sql.functions as F
 
 from utils import input_paths, get_events
 from pyspark.sql.window import Window
-
-findspark.init()
-findspark.find()
-
 from pyspark.sql import SparkSession
-
-os.environ["HADOOP_CONF_DIR"] = "/etc/hadoop/conf"
-os.environ["YARN_CONF_DIR"] = "/etc/hadoop/conf"
 
 log = logging.getLogger(__name__)
 
@@ -64,10 +57,7 @@ def main():
     expr_list = ["user_id", "to_timestamp(substring(datetime, 1, 19), 'y-M-d H:m:s') as datetime",
                  "event_type", "city"]
 
-
     with SparkSession.builder.master(master) \
-                             .config("spark.executor.memory", "16g") \
-                             .config("spark.driver.memory", "16g") \
                              .appName(f"ZonesDatamart-{uname}-{dt}-d{depth}") \
                              .getOrCreate() as session:
         context = session.sparkContext

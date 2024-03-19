@@ -1,12 +1,13 @@
-import datetime
+import os
 import sys
+import logging
 import pyspark.sql.functions as F
 
-from pyspark import SparkConf, SparkContext
-from pyspark.sql import SQLContext
 from pyspark.sql.window import Window
 from utils import input_paths
+from pyspark.sql import SparkSession
 
+log = logging.getLogger(__name__)
 
 def get_cities_by_coords(events_df, cities_df, partition_key_list):
     window = Window().partitionBy(partition_key_list).orderBy("distance")
@@ -52,24 +53,27 @@ def main():
     dt = sys.argv[1]
     depth = int(sys.argv[2])
     hdfs_url = sys.argv[3]
-    uname = sys.argv[4]
-    events_src_path = sys.argv[5]
-    events_dst_path = sys.argv[6]
-    city_path = sys.argv[7]
+    master = sys.argv[4]
+    uname = sys.argv[5]
+    events_src_path = sys.argv[6]
+    events_dst_path = sys.argv[7]
+    city_path = sys.argv[8]
 
-    conf = SparkConf().setAppName(f"LoadGeoEvents-{uname}-{dt}-d{depth}")
-    sc = SparkContext(conf=conf)
-    sql = SQLContext(sc)
+    with SparkSession.builder.master(master) \
+                             .appName(f"LoadGeoEvents-{uname}-{dt}-d{depth}") \
+                             .getOrCreate() as session:
 
-    events_path_list = input_paths(sc, hdfs_url, events_src_path, dt, depth)
+        context = session.sparkContext
+        events_path_list = input_paths(context, hdfs_url, events_src_path, dt, depth)
 
-    if len(events_path_list) == 0:
-        return
+        if len(events_path_list) == 0:
+            log.info("No events were found")
+            return
 
-    for df in get_events_with_coords(sql, events_path_list, hdfs_url, city_path):
-        df.write \
-          .partitionBy("date", "event_type") \
-          .mode("append").parquet(f"{hdfs_url}/{events_dst_path}")
+        for df in get_events_with_coords(session, events_path_list, hdfs_url, city_path):
+            df.write \
+              .partitionBy("date", "event_type") \
+              .mode("append").parquet(f"{hdfs_url}/{events_dst_path}")
 
 if __name__ == "__main__":
     main()

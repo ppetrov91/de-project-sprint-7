@@ -1,21 +1,13 @@
 import os
 import sys
 import logging
-import findspark
 import pyspark.sql.functions as F
 
 from utils import input_paths, get_events
 from pyspark.sql.window import Window
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
-
-
-findspark.init()
-findspark.find()
-
 from pyspark.sql import SparkSession
 
-os.environ["HADOOP_CONF_DIR"] = "/etc/hadoop/conf"
-os.environ["YARN_CONF_DIR"] = "/etc/hadoop/conf"
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +54,6 @@ def get_subscription_pairs(context, session, hdfs_url, events_src_path, dt, dept
 def get_not_writing_pairs(context, session, hdfs_url, events_src_path, dt, depth, sub):
     expr_list = ["user_id", "to_timestamp(substring(datetime, 1, 19), 'y-M-d H:m:s') as datetime", "city",
                  "timezone", "event_lat", "event_lon", "event.message_from", "event.message_to"]
-
     mes = get_events(context, session, hdfs_url, events_src_path,
                      dt, depth, expr_list, "message")
 
@@ -127,8 +118,6 @@ def main():
                  "city", "timezone", "event_lat", "event_lon"]
 
     with SparkSession.builder.master(master) \
-                             .config("spark.executor.memory", "16g") \
-                             .config("spark.driver.memory", "16g") \
                              .appName(f"ZonesDatamart-{uname}-{dt}-d{depth}") \
                              .getOrCreate() as session:
         context = session.sparkContext
