@@ -6,7 +6,7 @@
    затем по его типу. 
 
    - /user/sppetrov12/data/events/date=2022-05-31/event_type=message
-   - /user/sppetrov12/data/events/date=2022-05-31/event_type=subscription
+   - /user/sppetrov12/data/events/date=2022-05-31/event_type=subsrciption
    - /user/sppetrov12/data/events/date=2022-05-31/event_type=reaction
 
 2. В geo.csv был добавлен столбец timezone, с помощью которого можно будет определить локальное время города,
@@ -30,7 +30,7 @@
 
 6. Для удобства, поле lat перименовано на event_lat, а lon - на event_lon.
 
-7. Задача загрузки событий представлена в файле src/scripts/load_events_job.py.
+7. Задача загрузки событий представлена в файле src/srcipts/load_events_job.py.
   
    Ниже приведены параметры запуска:
      - dt - дата, до которой включительно будет загрузка сообщений.
@@ -42,7 +42,7 @@
 	 - events_dst_path - путь, в которой будут сохранены даные по events после преобразования.
 	 - city_path - путь к geo.csv на hdfs. 
 
-8. DAG-запуска задачи загрузки событий представлен в файле scr/dags/load_events_dag.py.
+8. DAG-запуска задачи загрузки событий представлен в файле src/dags/load_events_dag.py.
 
 ### Описание файла utils.py
 1. input_paths - функция, возвращающая пути с данными. Принимает следующие аргументы:
@@ -70,7 +70,7 @@
 	 - event_type - тип события, необязательный параметр. По умолчанию, будут выбираться все события.
    
 ### Описание users_datamart
-1. Реализация представлена в файле src/scripts/users_datamart_job.py.
+1. Реализация представлена в файле src/srcipts/users_datamart_job.py.
 
    Ниже приведены параметры запуска:
      - dt - дата, до которой включительно будет загрузка сообщений.
@@ -127,10 +127,10 @@
 
    Также, пользователь мог находиться во всех городах маршрута менее 27 дней, поэтому домашнего города также может и не быть.
 
-7. DAG-запуска задачи загрузки событий представлен в файле scr/dags/users_datamart_dag.py.
+7. DAG-запуска задачи загрузки событий представлен в файле src/dags/users_datamart_dag.py.
 
 ### Описание zones_datamart
-1. Реализация представлена в файле src/scripts/zones_datamart_job.py.
+1. Реализация представлена в файле src/srcipts/zones_datamart_job.py.
 
    Ниже приведены параметры запуска:
      - dt - дата, до которой включительно будет загрузка сообщений.
@@ -155,10 +155,10 @@
 
    и последующей агрегации по month, week и city.
 
-4. DAG-запуска задачи загрузки событий представлен в файле scr/dags/zones_datamart_dag.py.
+4. DAG-запуска задачи загрузки событий представлен в файле src/dags/zones_datamart_dag.py.
 
 ### Описание recommedations_datamart
-1. Реализация представлена в файле src/scripts/recommendations_datamart_job.py.
+1. Реализация представлена в файле src/srcipts/recommendations_datamart_job.py.
 
    Ниже приведены параметры запуска:
      - dt - дата, до которой включительно будет загрузка сообщений.
@@ -175,7 +175,7 @@
 
    В данном случае, это делается с помощью 
    
-   Window().partitionBy(["subscription_channel"]).orderBy(F.col("user_id"))
+   Window().partitionBy(["subsrciption_channel"]).orderBy(F.col("user_id"))
 
    Пары формируются с помощью функции lead(). Опытным путём было выяснено, что это работает быстрее, чем
 
@@ -197,4 +197,4 @@
 
    Они и составят финальную выборку.
 
-7. DAG-запуска задачи загрузки событий представлен в файле scr/dags/recommendations_datamart_dag.py.
+7. DAG-запуска задачи загрузки событий представлен в файле src/dags/recommendations_datamart_dag.py.
