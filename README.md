@@ -5,9 +5,9 @@
    /user/sppetrov12/data/events. При этом данные разбиты на партиции сначала по дате и времени события, а
    затем по его типу. 
 
-   /user/sppetrov12/data/events/date=2022-05-31/event_type=message
-   /user/sppetrov12/data/events/date=2022-05-31/event_type=subscription
-   /user/sppetrov12/data/events/date=2022-05-31/event_type=reaction
+   - /user/sppetrov12/data/events/date=2022-05-31/event_type=message
+   - /user/sppetrov12/data/events/date=2022-05-31/event_type=subscription
+   - /user/sppetrov12/data/events/date=2022-05-31/event_type=reaction
 
 2. В geo.csv был добавлен столбец timezone, с помощью которого можно будет определить локальное время города,
    в котором произошло событие.
