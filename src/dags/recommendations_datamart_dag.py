@@ -29,6 +29,7 @@ def recommendations_datamart():
                    conn_id= "yarn_spark",
                    application_args = ["2022-05-31",
                                        "31",
+                                       "15",
                                        "hdfs://rc1a-dataproc-m-dg5lgqqm7jju58f9.mdb.yandexcloud.net:8020",
                                        "yarn",
                                        "sppetrov12",

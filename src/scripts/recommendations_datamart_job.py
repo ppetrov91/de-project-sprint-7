@@ -21,15 +21,14 @@ def get_schema():
                StructField("event_lon", StringType(), True)
            ])
 
-def get_last_events_for_user(events):
+def get_last_events_for_user(events, topn):
     lw = Window().partitionBy(["user_id"]).orderBy(F.col("datetime").desc())
     return events.filter((F.col("event_lat").isNotNull()) & (F.col("event_lon").isNotNull())) \
                  .withColumn("rnk", F.row_number().over(lw)) \
-                 .filter("rnk == 1") \
+                 .filter(F.col("rnk") <= topn) \
                  .select("user_id", "datetime", "city", "timezone", "event_lat", "event_lon")
 
-def get_subscription_pairs(context, session, hdfs_url, events_src_path, dt, depth):
-    w = Window().partitionBy(["subscription_channel"]).orderBy(F.col("user_id"))
+def get_subscription_pairs(context, session, hdfs_url, events_src_path, dt, depth, topn):
     expr_list = ["user_id", "to_timestamp(substring(datetime, 1, 19), 'y-M-d H:m:s') as datetime",
                  "timezone", "city", "event_lat", "event_lon", "event.subscription_channel"]
 
@@ -40,27 +39,29 @@ def get_subscription_pairs(context, session, hdfs_url, events_src_path, dt, dept
         return sb, None
 
     # get last subscription event for each user
-    sub = get_last_events_for_user(sb)
+    sub = get_last_events_for_user(sb, topn)
 
-    # get subscription pairs. If users subscribed on one channel then they will be in one group         
-    sub_pairs = sb.filter(F.col("subscription_channel").isNotNull()) \
-                  .distinct() \
-                  .withColumn("user_id_right", F.lead(F.col("user_id")).over(w)) \
-                 .filter(F.col("user_id_right").isNotNull()) \
-                  .selectExpr("user_id as user_id_left", "user_id_right")
+    sb = sb.filter(F.col("subscription_channel").isNotNull()).distinct()
+    sb_left = sb.selectExpr("user_id as user_id_left", "subscription_channel")
+    sb_right = sb.selectExpr("user_id as user_id_right", "subscription_channel")
+
+    sub_pairs = sb_left.join(sb_right, ["subscription_channel"]) \
+                       .filter("user_id_left != user_id_right") \
+                       .select("user_id_left", "user_id_right")
 
     return sub_pairs, sub
 
-def get_not_writing_pairs(context, session, hdfs_url, events_src_path, dt, depth, sub):
+def get_not_writing_pairs(context, session, hdfs_url, events_src_path, dt, depth, topn, sub):
     expr_list = ["user_id", "to_timestamp(substring(datetime, 1, 19), 'y-M-d H:m:s') as datetime", "city",
                  "timezone", "event_lat", "event_lon", "event.message_from", "event.message_to"]
+    
     mes = get_events(context, session, hdfs_url, events_src_path,
                      dt, depth, expr_list, "message")
 
     if not mes:
         return sub, session.createDataFrame([], get_schema())
 
-    msg = get_last_events_for_user(mes)
+    msg = get_last_events_for_user(mes, topn)
 
     mes = mes.filter((F.col("message_from").isNotNull()) & (F.col("message_to").isNotNull())) \
              .selectExpr("message_from as user_id_left", "message_to as user_id_right")
@@ -69,8 +70,7 @@ def get_not_writing_pairs(context, session, hdfs_url, events_src_path, dt, depth
     mes = mes.union(mes_rev).distinct()
     return sub.join(mes, ["user_id_left", "user_id_right"], "anti"), msg
 
-
-def get_last_reactions_for_user(context, session, hdfs_url, events_src_path, dt, depth):
+def get_last_reactions_for_user(context, session, hdfs_url, events_src_path, dt, depth, topn):
     expr_list = ["user_id", "to_timestamp(substring(datetime, 1, 19), 'y-M-d H:m:s') as datetime",
                  "city", "timezone", "event_lat", "event_lon"]
 
@@ -80,8 +80,7 @@ def get_last_reactions_for_user(context, session, hdfs_url, events_src_path, dt,
     if not reactions:
         return session.createDataFrame([], get_schema())
 
-    return get_last_events_for_user(reactions)
-
+    return get_last_events_for_user(reactions, topn)
 
 def get_recommendation_data_mart(sub, events):
     return sub.join(events, [sub.user_id_left == events.user_id]) \
@@ -108,11 +107,12 @@ def get_recommendation_data_mart(sub, events):
 def main():
     dt = sys.argv[1]
     depth = int(sys.argv[2])
-    hdfs_url = sys.argv[3]
-    master = sys.argv[4]
-    uname = sys.argv[5]
-    events_src_path = sys.argv[6]
-    recommendations_datamart_base_path = sys.argv[7]
+    topn = int(sys.argv[3])
+    hdfs_url = sys.argv[4]
+    master = sys.argv[5]
+    uname = sys.argv[6]
+    events_src_path = sys.argv[7]
+    recommendations_datamart_base_path = sys.argv[8]
     dst_path = f"{hdfs_url}/{recommendations_datamart_base_path}/date={dt}/depth={depth}"
     expr_list = ["user_id", "to_timestamp(substring(datetime, 1, 19), 'y-M-d H:m:s') as datetime",
                  "city", "timezone", "event_lat", "event_lon"]
@@ -121,18 +121,24 @@ def main():
                              .appName(f"ZonesDatamart-{uname}-{dt}-d{depth}") \
                              .getOrCreate() as session:
         context = session.sparkContext
-        sub_pairs, sub = get_subscription_pairs(context, session, hdfs_url, events_src_path, dt, depth)
+        sub_pairs, sub = get_subscription_pairs(context, session, hdfs_url, events_src_path, dt, depth, topn)
 
         if not sub_pairs:
             log.info("Subscription pairs were not found")
             return
 
-        pairs, mes = get_not_writing_pairs(context, session, hdfs_url, events_src_path, dt, depth, sub_pairs)
-        reactions = get_last_reactions_for_user(context, session, hdfs_url, events_src_path, dt, depth)
-        events = sub.unionAll(mes).unionAll(reactions)
-        res = get_recommendation_data_mart(sub_pairs, events)
-        res.write.mode("overwrite").parquet(dst_path)
+        pairs_without_contact, mes = get_not_writing_pairs(context, session, hdfs_url, events_src_path, dt, depth, topn, sub_pairs)
+        reactions = get_last_reactions_for_user(context, session, hdfs_url, events_src_path, dt, depth, topn)
 
+        datetime_window = Window().partitionBy(["user_id"]).orderBy(F.col("datetime").desc())
+        events = sub.unionAll(mes).unionAll(reactions) \
+                    .withColumn("rnk", F.row_number().over(datetime_window)) \
+                    .filter(F.col("rnk") <= topn) \
+                    .select("user_id", "datetime", "city", "timezone", 
+                            "event_lat", "event_lon")
+
+        res = get_recommendation_data_mart(pairs_without_contact, events)
+        res.write.mode("overwrite").parquet(dst_path)
 
 if __name__ == "__main__":
     main()

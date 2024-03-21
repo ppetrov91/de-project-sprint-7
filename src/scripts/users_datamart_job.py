@@ -10,39 +10,43 @@ from pyspark.sql import SparkSession
 log = logging.getLogger(__name__)
 
 def get_user_city_stats(df):
-    bw = Window().partitionBy(["user_id"])
-    w = bw.orderBy(F.col("datetime"))
+    base_window = Window().partitionBy(["user_id"])
+    datetime_window = base_window.orderBy(F.col("datetime"))
+    datetime_window_desc = base_window.orderBy(F.col("datetime").desc())
 
-    ac = df.where("event_type == 'message'") \
-           .withColumn("act_city", F.last_value(F.col("city")).over(w)) \
-           .withColumn("rnk", F.row_number().over(w)) \
-           .withColumn("cnt", F.count(F.col("city")).over(bw)) \
-           .where("rnk == cnt").select("user_id", "act_city")
+    actual_city = df.where("event_type == 'message'") \
+                    .withColumn("rnk", F.row_number().over(datetime_window_desc)) \
+                    .where("rnk == 1") \
+                    .selectExpr("user_id", "city as act_city")
 
-    r = df.withColumn("next_city", F.lead("city", 1, "start").over(w)) \
-          .withColumn("max_datetime", F.last_value(F.col("datetime")).over(w)) \
-          .withColumn("next_datetime",
-                      F.coalesce(F.lead("datetime", 1).over(w), F.col("max_datetime"))) \
-          .withColumn("diff_in_days", F.datediff("next_datetime", "datetime")) \
-          .where("city != next_city") \
-          .withColumn("travel_count", F.count(F.col("city")).over(bw))
+    travel_cities = df.withColumn("next_city", F.lead("city", 1, "finish").over(datetime_window)) \
+                      .withColumn("prev_city", F.lag("city", 1, "start").over(datetime_window)) \
+                      .filter("city != prev_city or city != next_city") \
+                      .withColumn("next_datetime",
+                                  F.coalesce(F.lead("datetime", 1).over(datetime_window), F.col("datetime") + F.expr('INTERVAL 24 HOURS') )) \
+                      .withColumn("prev_datetime",
+                                  F.coalesce(F.lag("datetime", 1).over(datetime_window), F.col("datetime"))) \
+                      .filter(F.col("city") != F.col("next_city")) \
+                      .withColumn("diff_in_days", F.datediff("next_datetime", "prev_datetime")) \
+                      .withColumn("travel_array", F.collect_list(F.col("city")).over(datetime_window)) \
+                      .withColumn("travel_count", F.count(F.col("city")).over(base_window)) \
+                      .withColumn("rnk", F.row_number().over(datetime_window_desc))
 
-    hc = r.where("travel_count == 1 or diff_in_days > 27") \
-          .withColumn("rnk", F.row_number().over(w)) \
-          .withColumn("cnt", F.count(F.col("city")).over(bw)) \
-          .where("rnk == cnt").selectExpr("user_id", "city as home_city")
+    home_city = travel_cities.filter("travel_count == 1 or diff_in_days > 27") \
+                             .withColumn("rnk", F.row_number().over(datetime_window_desc)) \
+                             .filter("rnk == 1").selectExpr("user_id", "city as home_city")
 
-    ucs = r.withColumn("travel_array", F.collect_list(F.col("city")).over(w)) \
-           .withColumn("rnk", F.row_number().over(w)) \
-           .where("rnk == travel_count") \
-           .withColumn("local_time",
-                       F.from_utc_timestamp(F.col("datetime"), F.col("timezone"))) \
-           .select("user_id", "travel_count", "travel_array", "local_time", "timezone")
+    travel_cities = travel_cities.filter("rnk == 1") \
+                                 .withColumn("local_time",
+                                             F.from_utc_timestamp(F.col("datetime"), F.col("timezone"))) \
+                                 .select("user_id", "travel_count", "travel_array", "local_time", "timezone")
 
-    return ucs.join(ac, ["user_id"], "left") \
-              .join(hc, ["user_id"], "left") \
-              .select(ucs.user_id, ac.act_city, hc.home_city, ucs.timezone,
-                      ucs.travel_count, ucs.travel_array, ucs.local_time)
+    return travel_cities.join(actual_city, ["user_id"], "left") \
+                        .join(home_city, ["user_id"], "left") \
+                        .select(travel_cities.user_id, actual_city.act_city, 
+                                home_city.home_city, travel_cities.timezone, 
+                                travel_cities.travel_count, travel_cities.travel_array, 
+                                travel_cities.local_time)
 
 def main():
     dt = sys.argv[1]
