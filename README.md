@@ -99,24 +99,14 @@
 
    Пусть существует следующее множество:
 
-   +-------+----+-------------------+-------------+                                
-   |user_id|city|datetime           |timezone     |
-
-   +-------+----+-------------------+-------------+
-
-   |1      |MSK |2020-12-31 12:45:00|Europe/Moscow|
-
-   |1      |MSK |2021-01-01 01:40:00|Europe/Moscow|
-
-   |1      |MSK |2021-01-02 00:23:00|Europe/Moscow|
-
-   |1      |SPB |2021-01-05 00:22:00|Europe/Moscow|
-
-   |1      |SPB |2021-01-06 00:45:00|Europe/Moscow|
-
-   |1      |SPB |2021-02-01 01:00:00|Europe/Moscow|
-
-   +-------+----+-------------------+-------------+
+   | user_id | city | datetime | timezone
+   | -| -| -| -
+   | 1 | MSK | 2020-12-31 12:45:00 | Europe/Moscow
+   | 1 | MSK | 2021-01-01 12:45:00 | Europe/Moscow
+   | 1 | MSK | 2021-01-02 00:23:00 | Europe/Moscow
+   | 1 | SPB | 2021-01-05 00:22:00 | Europe/Moscow
+   | 1 | SPB | 2021-01-06 00:45:00 | Europe/Moscow
+   | 1 | SPB | 2021-02-01 01:00:00 | Europe/Moscow
 
    Для определения количества проведённых дней в городе необходимо определить:
      -  Дату и время, когда пользователь появился в городе.
@@ -128,58 +118,44 @@
 
    Для этого вычислим столбцы next_city и prev_city
 
-   base_window = Window().partitionBy(["user_id"])
-   datetime_window = base_window.orderBy(F.col("datetime"))
-   datetime_window_desc = base_window.orderBy(F.col("datetime").desc())
-
-   travel_cities = df.withColumn("next_city", F.lead("city", 1, "finish").over(datetime_window)) \
-                     .withColumn("prev_city", F.lag("city", 1, "start").over(datetime_window)) \
-
    В результате получим:
 
-   +-------+----+-------------------+-------------+---------+---------+
-   |user_id|city|           datetime|     timezone|next_city|prev_city|
-   +-------+----+-------------------+-------------+---------+---------+
-   |      1| MSK|2020-12-31 12:45:00|Europe/Moscow|      MSK|    start|
-   |      1| MSK|2021-01-01 01:40:00|Europe/Moscow|      MSK|      MSK|
-   |      1| MSK|2021-01-02 00:23:00|Europe/Moscow|      SPB|      MSK|
-   |      1| SPB|2021-01-05 00:22:00|Europe/Moscow|      SPB|      MSK|
-   |      1| SPB|2021-01-06 00:45:00|Europe/Moscow|      SPB|      SPB|
-   |      1| SPB|2021-02-01 01:00:00|Europe/Moscow|   finish|      SPB|
-   +-------+----+-------------------+-------------+---------+---------+
+   | user_id | city | datetime | timezone | next_city | prev_city
+   | -| -| -| -| -|  -|
+   | 1 | MSK | 2020-12-31 12:45:00 | Europe/Moscow | MSK | start
+   | 1 | MSK | 2021-01-01 01:40:00 | Europe/Moscow | MSK | MSK
+   | 1 | MSK | 2021-01-02 00:23:00 | Europe/Moscow | SPB | MSK
+   | 1 | SPB | 2021-01-05 00:22:00 | Europe/Moscow | SPB | MSK
+   | 1 | SPB | 2021-01-06 00:45:00 | Europe/Moscow | SPB | SPB
+   | 1 | SPB | 2021-02-01 01:00:00 | Europe/Moscow | finish | SPB
    
    Оставим только первые и последние появления пользователя в том или ином городе:
 
-   +-------+----+-------------------+-------------+---------+---------+
-   |user_id|city|           datetime|     timezone|next_city|prev_city|
-   +-------+----+-------------------+-------------+---------+---------+
-   |      1| MSK|2020-12-31 12:45:00|Europe/Moscow|      MSK|    start|
-   |      1| MSK|2021-01-02 00:23:00|Europe/Moscow|      SPB|      MSK|
-   |      1| SPB|2021-01-05 00:22:00|Europe/Moscow|      SPB|      MSK|
-   |      1| SPB|2021-02-01 01:00:00|Europe/Moscow|   finish|      SPB|
-   +-------+----+-------------------+-------------+---------+---------+
+   | user_id | city | datetime | timezone | next_city | prev_city
+   | -| -| -| -| -|  -|
+   | 1 | MSK | 2020-12-31 12:45:00 | Europe/Moscow | MSK | start
+   | 1 | MSK | 2021-01-02 00:23:00 | Europe/Moscow | SPB | MSK
+   | 1 | SPB | 2021-01-05 00:22:00 | Europe/Moscow | SPB | MSK
+   | 1 | SPB | 2021-02-01 01:00:00 | Europe/Moscow | finish | SPB
 
    Теперь определим дату и время предыдущей и последующей строки:
 
-   +-------+----+-------------------+-------------+---------+---------+-------------------+-------------------+
-   |user_id|city|           datetime|     timezone|next_city|prev_city|      next_datetime|      prev_datetime|
-   +-------+----+-------------------+-------------+---------+---------+-------------------+-------------------+
-   |      1| MSK|2020-12-31 12:45:00|Europe/Moscow|      MSK|    start|2021-01-02 00:23:00|2020-12-31 12:45:00|
-   |      1| MSK|2021-01-02 00:23:00|Europe/Moscow|      SPB|      MSK|2021-01-05 00:22:00|2020-12-31 12:45:00|
-   |      1| SPB|2021-01-05 00:22:00|Europe/Moscow|      SPB|      MSK|2021-02-01 01:00:00|2021-01-02 00:23:00|
-   |      1| SPB|2021-02-01 01:00:00|Europe/Moscow|   finish|      SPB|2021-02-02 01:00:00|2021-01-05 00:22:00|
-   +-------+----+-------------------+-------------+---------+---------+-------------------+-------------------+
+   | user_id | city | datetime | timezone | next_city | prev_city | next_datetime | prev_datetime
+   | -| -| -| -| -|  -| -|  -|
+   | 1 | MSK | 2020-12-31 12:45:00 | Europe/Moscow | MSK | start | 2021-01-02 00:23:00 | 2020-12-31 12:45:00
+   | 1 | MSK | 2021-01-02 00:23:00 | Europe/Moscow | SPB | MSK | 2021-01-05 00:22:00 | 2020-12-31 12:45:00
+   | 1 | SPB | 2021-01-05 00:22:00 | Europe/Moscow | SPB | MSK | 2021-02-01 01:00:00 | 2021-01-02 00:23:00
+   | 1 | SPB | 2021-02-01 01:00:00 | Europe/Moscow | finish | SPB | 2021-02-02 01:00:00 | 2021-01-05 00:22:00
+
 
    Оставим только последние упоминания о пользователе в том или ином городе перед переездом. 
 
    Только теперь можно определить количество проведённых дней в том или ином городе:
-
-   +-------+----+-------------------+-------------+---------+---------+-------------------+-------------------+------------+
-   |user_id|city|           datetime|     timezone|next_city|prev_city|      next_datetime|      prev_datetime|diff_in_days|
-   +-------+----+-------------------+-------------+---------+---------+-------------------+-------------------+------------+
-   |      1| MSK|2021-01-02 00:23:00|Europe/Moscow|      SPB|      MSK|2021-01-05 00:22:00|2020-12-31 12:45:00|           5|
-   |      1| SPB|2021-02-01 01:00:00|Europe/Moscow|   finish|      SPB|2021-02-02 01:00:00|2021-01-05 00:22:00|          28|
-   +-------+----+-------------------+-------------+---------+---------+-------------------+-------------------+------------+
+   
+   | user_id | city | datetime | timezone | next_city | prev_city | next_datetime | prev_datetime | diff_in_days
+   | -| -| -| -| -|  -| -|  -|  -|
+   | 1 | MSK | 2021-01-02 00:23:00 | Europe/Moscow | SPB | MSK | 2021-01-05 00:22:00 | 2020-12-31 12:45:00 | 5
+   | 1 | SPB | 2021-02-01 01:00:00 | Europe/Moscow | finish | SPB | 2021-02-02 01:00:00 | 2021-01-05 00:22:00 | 28
 
    На основе этой выборки можно определять маршрут и домашний город. 
 
